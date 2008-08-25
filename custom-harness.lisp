@@ -3,7 +3,7 @@
   (:use :common-lisp :alexandria :pergamum :iterate)
   (:export
    #:*log-success*
-   #:test-suite #:run-test-suite #:test-suite-error #:undefined-test-suite #:test-suite-failure
+   #:test-suite #:run-suite-test #:run-test-suite #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
    #:test-error #:test-failure
    #:deftest #:subtest-success #:expect #:unexpected-value #:condition-expected #:condition-actual #:expect-value
    #:*suite-name* #:*test-name* #:*subtest-id* #:condition-subtest-id))
@@ -14,7 +14,7 @@
 
 (defclass test-suite ()
   ((name :accessor name :initarg :name)
-   (tests :accessor tests :type list :initform nil :initarg :tests)))
+   (tests :accessor test-suite-tests :type list :initform nil :initarg :tests)))
 
 (define-condition test-suite-error (error)
   ((suite :accessor condition-suite :initarg :suite)))
@@ -47,12 +47,12 @@
     (format stream "~@<  ~A: ~A~:@>~%" test result)))
 
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
-  (unless (find test (tests suite))
+  (unless (find test (test-suite-tests suite))
     (error 'undefined-test-suite-test :suite suite :test test))
   (do-run-suite-test object test stream))
 
 (defun run-test-suite (object suite &key (stream t) &aux (suite (coerce-to-test-suite suite)))
-  (lret ((*print-right-margin* 80) conditions (tests (reverse (tests suite)))
+  (lret ((*print-right-margin* 80) conditions (tests (reverse (test-suite-tests suite)))
          (success t))
     (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
       (terpri stream)
@@ -69,7 +69,7 @@
     (with-gensyms (suite)
       `(let ((,suite (or (test-suite ',suite-name :if-does-not-exist :continue)
                          (setf (test-suite ',suite-name) (make-instance 'test-suite :name ',suite-name)))))
-         (pushnew ',name (tests ,suite))
+         (pushnew ',name (test-suite-tests ,suite))
          ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
            `(let ((*suite-name* ',suite-name) (*test-name* ',name) (*subtest-id* 0))
               (declare (special *suite-name* *test-name* *subtest-id*))

@@ -12,6 +12,10 @@
 
 (defparameter *log-success* nil)
 
+(defclass test-suite ()
+  ((name :accessor name :initarg :name)
+   (tests :accessor tests :type list :initform nil :initarg :tests)))
+
 (define-condition test-suite-error (error)
   ((suite :accessor condition-suite :initarg :suite)))
 
@@ -19,6 +23,12 @@
   ()
   (:report (lambda (cond stream)
              (format stream "~@<no tests defined for test suite ~S~:@>" (condition-suite cond)))))
+
+(define-condition undefined-test-suite-test (test-suite-error)
+  ((test :reader condition-test :initarg :test))
+  (:report (lambda (cond stream)
+             (format stream "~@<test suite ~S has no test ~S defined~:@>"
+                     (condition-suite cond) (condition-test cond)))))
 
 (define-condition test-suite-failure (test-suite-error)
   ((object :accessor condition-object :initarg :object)
@@ -30,35 +40,40 @@
 
 (defvar *test-suites* (make-hash-table))
 
-(defun test-suite (name)
-  (multiple-value-bind (value has-p) (gethash name *test-suites*)
-    (unless has-p
-      (error 'undefined-test-suite :suite name))
-    value))
+(define-container-hash-accessor *test-suites* test-suite :coercer t)
 
-(defun run-test-suite (object suite-name &key (stream t))
-  (lret ((*print-right-margin* 80) conditions (tests (reverse (test-suite suite-name)))
+(defun do-run-suite-test (object test stream)
+  (lret ((result (returning-conditions test-error (funcall test object))))
+    (format stream "~@<  ~A: ~A~:@>~%" test result)))
+
+(defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
+  (unless (find test (tests suite))
+    (error 'undefined-test-suite-test :suite suite :test test))
+  (do-run-suite-test object test stream))
+
+(defun run-test-suite (object suite &key (stream t) &aux (suite (coerce-to-test-suite suite)))
+  (lret ((*print-right-margin* 80) conditions (tests (reverse (tests suite)))
          (success t))
-    (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" suite-name))
+    (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
       (terpri stream)
-      (iter (for test = (pprint-pop))
-            (while test)
-            (format stream "~@<  ~A: ~A~:@>~%"
-                    test (andf success (handler-case (funcall test object)
-                                         (test-error (cond) (push cond conditions) cond))))))
+      (iter (for test = (pprint-pop)) (while test) 
+            (let ((result (do-run-suite-test object test stream)))
+              (when (typep result 'test-error) (collect result into conditions)))))
     (andf success t) ;; Coerce to non-generalised boolean.
     (when conditions
-      (error 'test-suite-failure :suite suite-name :object object :conditions conditions))))
+      (error 'test-suite-failure :suite (name suite) :object object :conditions conditions))))
 
 (defmacro deftest (suite-name name lambda-list &body body)
   (declare (symbol suite-name))
   (multiple-value-bind (documentation declarations body) (destructure-def-body body)
-    `(progn
-       (pushnew ',name (gethash ,suite-name *test-suites*))
-       ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
-          `(let ((*suite-name* ,suite-name) (*test-name* ',name) (*subtest-id* 0))
-             (declare (special *suite-name* *test-name* *subtest-id*))
-             ,@body)))))
+    (with-gensyms (suite)
+      `(let ((,suite (or (test-suite ',suite-name :if-does-not-exist :continue)
+                         (setf (test-suite ',suite-name) (make-instance 'test-suite :name ',suite-name)))))
+         (pushnew ',name (tests ,suite))
+         ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
+           `(let ((*suite-name* ',suite-name) (*test-name* ',name) (*subtest-id* 0))
+              (declare (special *suite-name* *test-name* *subtest-id*))
+              ,@body))))))
 
 (defun subtest-success ()
   (declare (special *subtest-id*))

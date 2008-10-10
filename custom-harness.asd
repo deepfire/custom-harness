@@ -1,3 +1,5 @@
+;;; -*- Mode: Lisp -*-
+
 (defpackage :custom-harness.system
   (:use :cl :asdf))
 

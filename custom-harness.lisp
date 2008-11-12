@@ -23,10 +23,14 @@
   (:use :common-lisp :alexandria :pergamum :iterate)
   (:export
    #:*log-success*
-   #:test-suite #:run-suite-test #:run-test-suite #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
-   #:test-error #:test-failure
-   #:deftest #:subtest-success #:expect #:unexpected-value #:unexpected-failure
-   #:condition-expected #:condition-actual #:expect-value #:expect-success
+   #:test-suite #:run-suite-test #:run-test-suite
+   #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
+   #:test-error #:unexpected-test-failure #:unexpected-test-success
+   #:deftest #:deftest-expected-failure #:deftest-unstable-failure
+   #:subtest-success
+   #:expect
+   #:expect-value #:unexpected-value #:condition-expected #:condition-actual
+   #:expect-success #:unexpected-failure #:condition-form
    #:*suite-name* #:*test-name* #:*subtest-id* #:condition-subtest-id))
 
 (in-package :custom-harness)
@@ -59,54 +63,6 @@
                (format stream "~@<while running tests from suite ~S on ~S, following test errors were reported:~2I~_~{~T~W~_~}~:@>"
                        (condition-suite cond) (condition-object cond) (reverse (condition-conditions cond)))))))
 
-(defvar *test-suites* (make-hash-table))
-
-(define-container-hash-accessor *test-suites* test-suite :coercer t)
-
-(defun do-run-suite-test (object test stream)
-  (lret ((result (returning-conditions test-error (funcall test object))))
-    (format stream "~@<  ~A: ~A~:@>~%" test result)))
-
-(defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
-  (unless (find test (test-suite-tests suite))
-    (error 'undefined-test-suite-test :suite suite :test test))
-  (do-run-suite-test object test stream))
-
-(defun run-test-suite (object suite &key (stream *error-output*)
-                       &aux (suite (coerce-to-test-suite suite)))
-  "Run all test functions in test SUITE, passing them OBJECT.
-   Output is redirected to STREAM, defaulting to T."
-  (lret ((*print-right-margin* 80) conditions (tests (reverse (test-suite-tests suite)))
-         (success t))
-    (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
-      (terpri stream)
-      (iter (for test = (pprint-pop)) (while test) 
-            (let ((result (do-run-suite-test object test stream)))
-              (when (typep result 'test-error) (collect result into conditions)))))
-    (andf success t) ;; Coerce to non-generalised boolean.
-    (when conditions
-      (error 'test-suite-failure :suite (name suite) :object object :conditions conditions))))
-
-(defmacro deftest (suite-name name lambda-list &body body)
-  "Define a test function with NAME in testsuite SUITE-NAME, with LAMBDA-LIST and BODY."
-  (declare (symbol suite-name))
-  (multiple-value-bind (documentation declarations body) (destructure-def-body body)
-    (with-gensyms (suite)
-      `(let ((,suite (or (test-suite ',suite-name :if-does-not-exist :continue)
-                         (setf (test-suite ',suite-name) (make-instance 'test-suite :name ',suite-name)))))
-         (pushnew ',name (test-suite-tests ,suite))
-         ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
-           `(let ((*suite-name* ',suite-name) (*test-name* ',name) (*subtest-id* 0))
-              (declare (special *suite-name* *test-name* *subtest-id*))
-              ,@body))))))
-
-(defun subtest-success ()
-  (declare (special *subtest-id*))
-  (when *log-success*
-    (format t "~@<subtest ~A passed~:@>~%" *subtest-id*))
-  (incf *subtest-id*)
-  t)
-
 (define-condition test-error (error)
   ((suite-name :accessor %condition-suite-name :initarg :suite-name)
    (test-name :accessor %condition-test-name :initarg :test-name)
@@ -116,10 +72,100 @@
   (declare (special *suite-name* *test-name* *subtest-id*))
   (apply #'error type :suite-name *suite-name* :test-name *test-name* :subtest-id *subtest-id* args))
 
-(defun condition-subtest-id (cond)
-  (list (%condition-suite-name cond) (%condition-test-name cond) (%condition-subtest-id cond)))
+(define-condition unexpected-test-failure (test-error) ())
+(define-condition unexpected-test-success (test-error)
+  ()
+  (:report (lambda (cond stream)
+             (format stream "~@<unexpected success during test ~S~:@>"
+                     (%condition-test-name cond)))))
 
-(define-condition test-failure (test-error) ())
+(define-condition unexpected-value (unexpected-test-failure)
+  ((expected :accessor condition-expected :initarg :expected)
+   (actual :accessor condition-actual :initarg :actual))
+  (:report (lambda (cond stream)
+             (let ((expected (condition-expected cond))
+                   (actual (condition-actual cond))
+                   (*print-base* 10))
+               (format stream "~@<unexpected value during test ~S:~3I ~<expected: ~S, actual: ~S~:@>~:@>"
+                       (condition-subtest-id cond) (list expected actual))))))
+
+(defvar *test-suites* (make-hash-table))
+
+(define-container-hash-accessor *test-suites* test-suite :coercer t)
+
+(defun do-run-suite-test (object test stream)
+  (lret ((result (returning-conditions test-error (funcall test object))))
+    (format stream "~@<  ~A: ~A~:@>~%" test result)))
+
+(defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
+  "Run an individual TEST from test SUITE, passing it the OBJECT/
+   Output is redirected to STREAM, defaulting to *ERROR-OUTPUT*."
+  (iter (for test-spec in (test-suite-tests suite))
+        (while test-spec)
+        (destructuring-bind (test-name &key expected-failure unstable-failure) (ensure-cons test-spec)
+          (when (eq test-name test)
+            (return-from run-suite-test (do-run-suite-test object test stream)))))
+  (error 'undefined-test-suite-test :suite suite :test test))
+
+(defun run-test-suite (object suite &key (stream *error-output*) (if-fail :continue)
+                       &aux (suite (coerce-to-test-suite suite)))
+  "Run all test functions in test SUITE, passing them the OBJECT.
+   Output is redirected to STREAM, which defaults to *ERROR-OUTPUT*.
+
+   When IF-FAIL is :ERROR, an error of type TEST-SUITE-FAILURE is raised upon test failures, 
+   otherwise (the default), if it is :CONTINUE, NIL is returned in such cases.
+   Failing all that, when all tests succeed, the value returned is T."
+  (lret ((*print-right-margin* 80) conditions (tests (reverse (test-suite-tests suite))))
+    (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
+      (terpri stream)
+      (iter (for test-spec = (pprint-pop))
+            (while test-spec)
+            (destructuring-bind (test-name &key expected-failure unstable-failure) (ensure-cons test-spec)
+              (let ((result (do-run-suite-test object test-name stream)))
+                (cond ((typep result 'test-error)
+                       (if (or expected-failure unstable-failure)
+                           (format stream "this failure is expected.~%")
+                           (push result conditions)))
+                      (expected-failure
+                       (push (make-instance 'unexpected-test-success
+                              :suite-name suite :test-name test-name) conditions)))))))
+    (if conditions
+        (ecase if-fail
+          (:continue nil)
+          (:error
+           (error 'test-suite-failure :suite (name suite) :object object :conditions conditions)))
+        t)))
+
+(defmacro do-deftest (suite-name name lambda-list body &rest params &key &allow-other-keys)
+  (declare (symbol suite-name))
+  (multiple-value-bind (documentation declarations body) (destructure-def-body body)
+    (with-gensyms (suite)
+      `(let ((,suite (or (test-suite ',suite-name :if-does-not-exist :continue)
+                         (setf (test-suite ',suite-name) (make-instance 'test-suite :name ',suite-name)))))
+         (push ',(if params `(,name ,@params) name) (test-suite-tests ,suite))
+         ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
+           `(let ((*suite-name* ',suite-name) (*test-name* ',name) (*subtest-id* 0))
+              (declare (special *suite-name* *test-name* *subtest-id*))
+              ,@body))))))
+
+(defmacro deftest (suite-name name lambda-list &body body)
+  "Like DEFUN, but the defined function is associated with test suite SUITE-NAME."
+  `(do-deftest ,suite-name ,name ,lambda-list (,@body)))
+
+(defmacro deftest-expected-failure (suite-name name lambda-list &body body)
+  "Like DEFTEST, but the success expectations are reversed."
+  `(do-deftest ,suite-name ,name ,lambda-list (,@body) :expected-failure t))
+
+(defmacro deftest-unstable-failure (suite-name name lambda-list &body body)
+  "Like DEFTEST, both success and failure are ignored."
+  `(do-deftest ,suite-name ,name ,lambda-list (,@body) :unstable-failure t))
+
+(defun subtest-success ()
+  (declare (special *subtest-id*))
+  (when *log-success*
+    (format t "~@<subtest ~A passed~:@>~%" *subtest-id*))
+  (incf *subtest-id*)
+  t)
 
 (defmacro expect (test-form (condition &rest condition-parameters) &body failure-body)
   "Expect TEST-FORM evaluate to non-NIL, otherwise executing FAILURE-BODY, and raising
@@ -132,7 +178,10 @@
             ,@failure-body
             (test-error ',condition ,@condition-parameters)))))
 
-(define-condition unexpected-value (test-failure)
+(defun condition-subtest-id (cond)
+  (list (%condition-suite-name cond) (%condition-test-name cond) (%condition-subtest-id cond)))
+
+(define-condition unexpected-value (unexpected-test-failure)
   ((expected :accessor condition-expected :initarg :expected)
    (actual :accessor condition-actual :initarg :actual))
   (:report (lambda (cond stream)
@@ -148,7 +197,7 @@
   (if (funcall test expected actual) (subtest-success)
       (test-error 'unexpected-value :expected expected :actual actual)))
 
-(define-condition unexpected-failure (test-failure)
+(define-condition unexpected-failure (unexpected-test-failure)
   ((form :accessor condition-form :initarg :form))
   (:report (lambda (cond stream)
              (let ((*print-base* 10))
@@ -157,5 +206,6 @@
 
 (defmacro expect-success (form)
   "Expect FORM evaluate to non-NIL, raising UNEXPECTED-FAILURE otherwise."
-  `(or ,form
+  `(if ,form
+       (subtest-success)
        (test-error 'unexpected-failure :form ',form)))

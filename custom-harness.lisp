@@ -25,7 +25,8 @@
    #:*log-success*
    #:test-suite #:run-suite-test #:run-test-suite #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
    #:test-error #:test-failure
-   #:deftest #:subtest-success #:expect #:unexpected-value #:condition-expected #:condition-actual #:expect-value
+   #:deftest #:subtest-success #:expect #:unexpected-value #:unexpected-failure
+   #:condition-expected #:condition-actual #:expect-value #:expect-success
    #:*suite-name* #:*test-name* #:*subtest-id* #:condition-subtest-id))
 
 (in-package :custom-harness)
@@ -137,5 +138,19 @@
                        (condition-subtest-id cond) (list expected actual))))))
 
 (defun expect-value (expected actual &key (test #'eql))
+  "Expect ACTUAL value to match with what was EXPECTED, under TEST, defaulting to EQL.
+   UNEXPECTED-VALUE is raised otherwise."
   (if (funcall test expected actual) (subtest-success)
       (test-error 'unexpected-value :expected expected :actual actual)))
+
+(define-condition unexpected-failure (test-failure)
+  ((form :accessor condition-form :initarg :form))
+  (:report (lambda (cond stream)
+             (let ((*print-base* 10))
+               (format stream "~@<unexpected NIL evaluation of form ~<~S~:@>~:@>"
+                       (condition-form cond))))))
+
+(defmacro expect-success (form)
+  "Expect FORM evaluate to non-NIL, raising UNEXPECTED-FAILURE otherwise."
+  `(unless ,form
+     (test-error 'unexpected-failure :form ',form)))

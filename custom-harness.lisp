@@ -72,7 +72,8 @@
     (error 'undefined-test-suite-test :suite suite :test test))
   (do-run-suite-test object test stream))
 
-(defun run-test-suite (object suite &key (stream t) &aux (suite (coerce-to-test-suite suite)))
+(defun run-test-suite (object suite &key (stream *error-output*)
+                       &aux (suite (coerce-to-test-suite suite)))
   "Run all test functions in test SUITE, passing them OBJECT.
    Output is redirected to STREAM, defaulting to T."
   (lret ((*print-right-margin* 80) conditions (tests (reverse (test-suite-tests suite)))

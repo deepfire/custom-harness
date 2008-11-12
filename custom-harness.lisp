@@ -73,6 +73,8 @@
   (do-run-suite-test object test stream))
 
 (defun run-test-suite (object suite &key (stream t) &aux (suite (coerce-to-test-suite suite)))
+  "Run all test functions in test SUITE, passing them OBJECT.
+   Output is redirected to STREAM, defaulting to T."
   (lret ((*print-right-margin* 80) conditions (tests (reverse (test-suite-tests suite)))
          (success t))
     (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
@@ -85,6 +87,7 @@
       (error 'test-suite-failure :suite (name suite) :object object :conditions conditions))))
 
 (defmacro deftest (suite-name name lambda-list &body body)
+  "Define a test function with NAME in testsuite SUITE-NAME, with LAMBDA-LIST and BODY."
   (declare (symbol suite-name))
   (multiple-value-bind (documentation declarations body) (destructure-def-body body)
     (with-gensyms (suite)
@@ -115,10 +118,11 @@
 (defun condition-subtest-id (cond)
   (list (%condition-suite-name cond) (%condition-test-name cond) (%condition-subtest-id cond)))
 
-(define-condition test-failure (test-error)
-  ())
+(define-condition test-failure (test-error) ())
 
 (defmacro expect (test-form (condition &rest condition-parameters) &body failure-body)
+  "Expect TEST-FORM evaluate to non-NIL, otherwise executing FAILURE-BODY, and raising
+   CONDITION with CONDITION-PARAMETERS passed."
   (unless (subtypep condition 'test-error)
     (error "~@<condition must be a subtype of CUSTOM-HARNESS:TEST-ERROR~:@>"))
   `(locally

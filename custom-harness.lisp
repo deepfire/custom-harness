@@ -157,5 +157,5 @@
 
 (defmacro expect-success (form)
   "Expect FORM evaluate to non-NIL, raising UNEXPECTED-FAILURE otherwise."
-  `(unless ,form
-     (test-error 'unexpected-failure :form ',form)))
+  `(or ,form
+       (test-error 'unexpected-failure :form ',form)))

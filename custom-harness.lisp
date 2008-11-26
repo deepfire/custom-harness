@@ -25,8 +25,10 @@
    #:*log-success*
    #:test-suite #:run-suite-test #:run-test-suite
    #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
-   #:test-error #:unexpected-test-failure #:unexpected-test-success
+   #:test-error #:unexpected-test-failure #:unexpected-test-success #:unexpected-test-compilation-success
+   #:expected-test-runtime-error #:unexpected-test-runtime-lack-of-errors
    #:deftest #:deftest-expected-failure #:deftest-unstable-failure
+   #:deftest-expected-compilation-failure #:deftest-expected-runtime-error
    #:subtest-success
    #:expect
    #:expect-value #:unexpected-value #:condition-expected #:condition-actual
@@ -73,10 +75,34 @@
   (apply #'error type :suite-name *suite-name* :test-name *test-name* :subtest-id *subtest-id* args))
 
 (define-condition unexpected-test-failure (test-error) ())
+(define-condition expected-test-failure (test-error) ())
 (define-condition unexpected-test-success (test-error)
   ()
   (:report (lambda (cond stream)
              (format stream "~@<unexpected success during test ~S~:@>"
+                     (%condition-test-name cond)))))
+(define-condition expected-test-compilation-failure (expected-test-failure)
+  ()
+  (:report (lambda (cond stream)
+             (format stream "~@<expected failure compiling test ~S~:@>"
+                     (%condition-test-name cond)))))
+(define-condition unexpected-test-compilation-success (unexpected-test-success)
+  ()
+  (:report (lambda (cond stream)
+             (format stream "~@<unexpected success compiling test ~S~:@>"
+                     (%condition-test-name cond)))))
+(define-condition expected-test-runtime-error (expected-test-failure)
+  ((error :accessor condition-error :initarg :error))
+  (:report (lambda (cond stream)
+             (format stream "~@<expected runtime ~A ~A during test ~S~:@>"
+                     (type-of (condition-error cond))
+                     (condition-error cond)
+                     (%condition-test-name cond)))))
+(define-condition unexpected-test-runtime-lack-of-errors (unexpected-test-success)
+  ((error-type :accessor condition-error-type :initarg :error-type))
+  (:report (lambda (cond stream)
+             (format stream "~@<unexpected lack of runtime errors of type ~S during test ~S~:@>"
+                     (condition-error-type cond)
                      (%condition-test-name cond)))))
 
 (define-condition unexpected-value (unexpected-test-failure)
@@ -100,12 +126,9 @@
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/
    Output is redirected to STREAM, defaulting to *ERROR-OUTPUT*."
-  (iter (for test-spec in (test-suite-tests suite))
-        (while test-spec)
-        (destructuring-bind (test-name &key expected-failure unstable-failure) (ensure-cons test-spec)
-          (when (eq test-name test)
-            (return-from run-suite-test (do-run-suite-test object test stream)))))
-  (error 'undefined-test-suite-test :suite suite :test test))
+  (if-let ((test (find test (test-suite-tests suite) :key #'ensure-cons)))
+          (do-run-suite-test object test stream)
+          (error 'undefined-test-suite-test :suite suite :test test)))
 
 (defun run-test-suite (object suite &key (stream *error-output*) (if-fail :continue)
                        &aux (suite (coerce-to-test-suite suite)))
@@ -115,15 +138,19 @@
    When IF-FAIL is :ERROR, an error of type TEST-SUITE-FAILURE is raised upon test failures, 
    otherwise (the default), if it is :CONTINUE, NIL is returned in such cases.
    Failing all that, when all tests succeed, the value returned is T."
-  (lret ((*print-right-margin* 80) conditions (tests (reverse (test-suite-tests suite))))
+  (let ((*print-right-margin* 80)
+        (tests (reverse (test-suite-tests suite)))
+        conditions)
     (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
       (terpri stream)
       (iter (for test-spec = (pprint-pop))
             (while test-spec)
-            (destructuring-bind (test-name &key expected-failure unstable-failure) (ensure-cons test-spec)
+            (destructuring-bind (test-name &key expected-failure unstable-failure)
+                (ensure-cons test-spec)
               (let ((result (do-run-suite-test object test-name stream)))
                 (cond ((typep result 'test-error)
-                       (if (or expected-failure unstable-failure)
+                       (if (or expected-failure unstable-failure
+                               (typep result 'expected-test-failure))
                            (format stream "this failure is expected.~%")
                            (push result conditions)))
                       (expected-failure
@@ -132,8 +159,7 @@
     (if conditions
         (ecase if-fail
           (:continue nil)
-          (:error
-           (error 'test-suite-failure :suite (name suite) :object object :conditions conditions)))
+          (:error (error 'test-suite-failure :suite (name suite) :object object :conditions conditions)))
         t)))
 
 (defmacro do-deftest (suite-name name lambda-list body &rest params &key &allow-other-keys)
@@ -159,6 +185,23 @@
 (defmacro deftest-unstable-failure (suite-name name lambda-list &body body)
   "Like DEFTEST, both success and failure are ignored."
   `(do-deftest ,suite-name ,name ,lambda-list (,@body) :unstable-failure t))
+
+(defmacro deftest-expected-compilation-failure (suite-name name lambda-list &body body)
+  "Expect compilation of BODY with binding LAMBDA-LIST to fail."
+  `(do-deftest ,suite-name ,name ,lambda-list
+     ((declare (ignore ,@(lambda-list-binds lambda-list)))
+      (if (ignore-errors (compile nil (lambda ,lambda-list ,@body)))
+          (test-error 'unexpected-test-compilation-success)
+          (test-error 'expected-test-compilation-failure)))))
+
+(defmacro deftest-expected-runtime-error (error-type suite-name name lambda-list &body body)
+  "Like DEFTEST, but catch unexpected runtime errors."
+  (with-gensyms (rest)
+    `(do-deftest ,suite-name ,name (,rest)
+       ((if-let* ((error (nth-value 1 (ignore-errors (apply (lambda ,lambda-list ,@body) ,rest))))
+                  (expected-error-p (typep error ',error-type)))
+                 (test-error 'expected-test-runtime-error :error error)
+                 (test-error 'unexpected-test-runtime-lack-of-errors :error-type ',error-type))))))
 
 (defun subtest-success ()
   (declare (special *subtest-id*))

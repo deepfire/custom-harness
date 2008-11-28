@@ -154,8 +154,12 @@
                            (format stream "this failure is expected.~%")
                            (push result conditions)))
                       (expected-failure
-                       (push (make-instance 'unexpected-test-success
-                              :suite-name suite :test-name test-name) conditions)))))))
+                       (write
+                        (first
+                         (push (make-instance 'unexpected-test-success
+                                :suite-name suite :test-name test-name) conditions))
+                        :stream stream :escape nil)
+                       (terpri stream)))))))
     (if conditions
         (ecase if-fail
           (:continue nil)

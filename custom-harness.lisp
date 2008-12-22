@@ -146,6 +146,7 @@
   (let ((*print-right-margin* 80)
         (tests (reverse (test-suite-tests suite)))
         conditions)
+    #+ecl (report stream "~&---( ") ;; BUG: stream flushing in the context of P-P-L-B is broken in ECL.
     (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
       (terpri stream)
       (iter (for test-spec = (pprint-pop))

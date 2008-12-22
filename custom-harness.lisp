@@ -135,7 +135,7 @@
           (do-run-suite-test object test stream)
           (error 'undefined-test-suite-test :suite suite :test test)))
 
-(defun run-test-suite (object suite &key (stream *error-output*) (if-fail :continue)
+(defun run-test-suite (object suite &key (stream *standard-output*) (if-fail :continue)
                        &aux (suite (coerce-to-test-suite suite)))
   "Run all test functions in test SUITE, passing them the OBJECT.
    Output is redirected to STREAM, which defaults to *ERROR-OUTPUT*.

@@ -23,7 +23,7 @@
   (:use :common-lisp :alexandria :pergamum :iterate)
   (:export
    #:*log-success*
-   #:test-suite #:run-suite-test #:run-test-suite
+   #:test-suite #:find-test #:run-test #:run-suite-test #:run-test-suite
    #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
    #:test-error #:unexpected-test-failure #:unexpected-test-success #:unexpected-test-compilation-success
    #:expected-test-runtime-error #:unexpected-test-runtime-lack-of-errors
@@ -123,17 +123,25 @@
 
 (define-container-hash-accessor *test-suites* test-suite :coercer t)
 
-(defun do-run-suite-test (object test stream)
-  (report stream "~@<  ~A: ~:@>" test)
+(defun find-test (suite test &aux (suite (coerce-to-test-suite suite)))
+  "Find TEST within SUITE."
+  (find test (test-suite-tests suite) :key (compose #'car #'ensure-cons)))
+
+(defun run-test (object test &optional (stream t))
+  "Run TEST on OBJECT, reporting to STREAM, which defaults to T.
+
+   TEST must be a test object, as returned by FIND-TEST."
   (lret ((result (returning-conditions test-error (funcall test object))))
 	(report stream "~@<~A~:@>~%" result)))
 
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/
-   Output is redirected to STREAM, defaulting to *ERROR-OUTPUT*."
-  (if-let ((test (find test (test-suite-tests suite) :key #'ensure-cons)))
-          (do-run-suite-test object test stream)
-          (error 'undefined-test-suite-test :suite suite :test test)))
+   Output is redirected to STREAM, defaulting to *ERROR-OUTPUT*.
+
+   TEST muse be a name designating a test within SUITE."
+  (if-let ((test (find-test suite test)))
+    (run-test object test stream)
+    (error 'undefined-test-suite-test :suite suite :test test)))
 
 (defun run-test-suite (object suite &key (stream *standard-output*) (if-fail :continue)
                        &aux (suite (coerce-to-test-suite suite)))
@@ -153,7 +161,7 @@
             (while test-spec)
             (destructuring-bind (test-name &key expected-failure unstable-failure)
                 (ensure-cons test-spec)
-              (let ((result (do-run-suite-test object test-name stream)))
+              (let ((result (run-test object test-name stream)))
                 (cond ((typep result 'test-error)
                        (if (or expected-failure unstable-failure
                                (typep result 'expected-test-failure))

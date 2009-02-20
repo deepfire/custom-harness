@@ -13,3 +13,5 @@
 *.obj
 *.ilk
 *.pdb
+*.implib
+

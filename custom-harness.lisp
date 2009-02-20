@@ -22,7 +22,8 @@
   (:nicknames :cushar)
   (:use :common-lisp :alexandria :pergamum :iterate)
   (:export
-   #:*log-success*
+   #:*test-critical-features* #:*log-success*
+   #:test-featurep
    #:test-suite #:find-test #:run-test #:run-suite-test #:run-test-suite
    #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
    #:test-error #:unexpected-test-failure #:unexpected-test-success #:unexpected-test-compilation-success
@@ -37,7 +38,12 @@
 
 (in-package :custom-harness)
 
+(defvar *test-critical-features* nil)
 (defparameter *log-success* nil)
+
+(defun test-critical-featurep (feature)
+  "See if test-related FEATURE is present."
+  (find feature *test-critical-features* :test #'eq))
 
 (defclass test-suite ()
   ((name :accessor name :initarg :name)
@@ -127,12 +133,15 @@
   "Find TEST within SUITE."
   (find test (test-suite-tests suite) :key (compose #'car #'ensure-cons)))
 
+(defun format-test (stream test-name object)
+  (format stream "~@<  ~A: ~A~:@>~%" test-name object))
+
 (defun run-test (object test &optional (stream t))
   "Run TEST on OBJECT, reporting to STREAM, which defaults to T.
 
    TEST must be a test object, as returned by FIND-TEST."
   (lret ((result (returning-conditions test-error (funcall test object))))
-	(report stream "~@<~A~:@>~%" result)))
+    (format-test stream test result)))
 
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/
@@ -180,42 +189,58 @@
           (:error (error 'test-suite-failure :suite (name suite) :object object :conditions conditions)))
         t)))
 
-(defmacro do-deftest (suite-name name lambda-list body &rest params &key &allow-other-keys)
+(defmacro do-deftest (suite-name name required-features lambda-list body &rest params &key &allow-other-keys)
   (declare (symbol suite-name))
   (multiple-value-bind (documentation declarations body) (destructure-def-body body)
-    (with-gensyms (suite)
-      `(let ((,suite (or (test-suite ',suite-name :if-does-not-exist :continue)
-                         (setf (test-suite ',suite-name) (make-instance 'test-suite :name ',suite-name)))))
-         (push ',(if params `(,name ,@params) name) (test-suite-tests ,suite))
-         ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
-           `(let ((*suite-name* ',suite-name) (*test-name* ',name) (*subtest-id* 0))
-              (declare (special *suite-name* *test-name* *subtest-id*))
-              ,@body))))))
+    (let ((aggregate-params (append params (when required-features `(:required-features ,required-features)))))
+      (with-gensyms (suite)
+        `(let ((,suite (or (test-suite ',suite-name :if-does-not-exist :continue)
+                           (setf (test-suite ',suite-name) (make-instance 'test-suite :name ',suite-name)))))
+           (push ',(if aggregate-params `(,name ,@aggregate-params) name) (test-suite-tests ,suite))
+           ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
+              `(let ((*suite-name* ',suite-name) (*test-name* ',name) (*subtest-id* 0))
+                 (declare (special *suite-name* *test-name* *subtest-id*))
+                 ,@body)))))))
 
-(defmacro deftest (suite-name name lambda-list &body body)
-  "Like DEFUN, but the defined function is associated with test suite SUITE-NAME."
-  `(do-deftest ,suite-name ,name ,lambda-list (,@body)))
+(defmacro deftest (suite-name name required-features lambda-list &body body)
+  "Like DEFUN, but the defined function is associated with test suite SUITE-NAME.
 
-(defmacro deftest-expected-failure (suite-name name lambda-list &body body)
-  "Like DEFTEST, but the success expectations are reversed."
-  `(do-deftest ,suite-name ,name ,lambda-list (,@body) :expected-failure t))
+   The test is only made available if all of REQUIRED-FEATURES are also present
+   in *TEST-CRITICAL-FEATURES* during runtime."
+  `(do-deftest ,suite-name ,name ,required-features ,lambda-list (,@body)))
 
-(defmacro deftest-unstable-failure (suite-name name lambda-list &body body)
-  "Like DEFTEST, both success and failure are ignored."
-  `(do-deftest ,suite-name ,name ,lambda-list (,@body) :unstable-failure t))
+(defmacro deftest-expected-failure (suite-name name required-features lambda-list &body body)
+  "Like DEFTEST, but the success expectations are reversed.
 
-(defmacro deftest-expected-compilation-failure (suite-name name lambda-list &body body)
-  "Expect compilation of BODY with binding LAMBDA-LIST to fail."
-  `(do-deftest ,suite-name ,name ,lambda-list
+   The test is only made available if all of REQUIRED-FEATURES are also present
+   in *TEST-CRITICAL-FEATURES* during runtime."
+  `(do-deftest ,suite-name ,name ,required-features ,lambda-list (,@body) :expected-failure t))
+
+(defmacro deftest-unstable-failure (suite-name name required-features lambda-list &body body)
+  "Like DEFTEST, both success and failure are ignored.
+
+   The test is only made available if all of REQUIRED-FEATURES are also present
+   in *TEST-CRITICAL-FEATURES* during runtime."
+  `(do-deftest ,suite-name ,name ,required-features ,lambda-list (,@body) :unstable-failure t))
+
+(defmacro deftest-expected-compilation-failure (suite-name name required-features lambda-list &body body)
+  "Expect compilation of BODY with binding LAMBDA-LIST to fail.
+
+   The test is only made available if all of REQUIRED-FEATURES are also present
+   in *TEST-CRITICAL-FEATURES* during runtime."
+  `(do-deftest ,suite-name ,name ,required-features ,lambda-list
      ((declare (ignore ,@(lambda-list-binds lambda-list)))
       (if (ignore-errors (compile nil (lambda ,lambda-list ,@body)))
           (test-error 'unexpected-test-compilation-success)
           (test-error 'expected-test-compilation-failure)))))
 
-(defmacro deftest-expected-runtime-error (error-type suite-name name lambda-list &body body)
-  "Like DEFTEST, but catch unexpected runtime errors."
+(defmacro deftest-expected-runtime-error (error-type suite-name name required-features lambda-list &body body)
+  "Like DEFTEST, but catch unexpected runtime errors.
+
+   The test is only made available if all of REQUIRED-FEATURES are also present
+   in *TEST-CRITICAL-FEATURES* during runtime."
   (with-gensyms (rest)
-    `(do-deftest ,suite-name ,name (,rest)
+    `(do-deftest ,suite-name ,name ,required-features (,rest)
        ((if-let* ((error (nth-value 1 (ignore-errors (apply (lambda ,lambda-list ,@body) ,rest))))
                   (expected-error-p (typep error ',error-type)))
                  (test-error 'expected-test-runtime-error :error error)

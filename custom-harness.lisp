@@ -122,7 +122,7 @@
              (let ((expected (condition-expected cond))
                    (actual (condition-actual cond))
                    (*print-base* 10))
-               (report stream "~@<unexpected value during test ~S:~3I ~<expected: ~S, actual: ~S~:@>~:@>"
+               (report stream "~@<unexpected value during test ~S:~3I ~<expected: ~X, actual: ~X~:@>~:@>"
                        (condition-subtest-id cond) (list expected actual))))))
 
 (defvar *test-suites* (make-hash-table))
@@ -266,16 +266,6 @@
 
 (defun condition-subtest-id (cond)
   (list (%condition-suite-name cond) (%condition-test-name cond) (%condition-subtest-id cond)))
-
-(define-condition unexpected-value (unexpected-test-failure)
-  ((expected :accessor condition-expected :initarg :expected)
-   (actual :accessor condition-actual :initarg :actual))
-  (:report (lambda (cond stream)
-             (let ((expected (condition-expected cond))
-                   (actual (condition-actual cond))
-                   (*print-base* 10))
-               (report stream "~@<unexpected value during test ~S:~3I ~<expected: ~S, actual: ~S~:@>~:@>"
-                       (condition-subtest-id cond) (list expected actual))))))
 
 (defun expect-value (expected actual &key (test #'eql))
   "Expect ACTUAL value to match with what was EXPECTED, under TEST, defaulting to EQL.

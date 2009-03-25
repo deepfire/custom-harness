@@ -30,11 +30,11 @@
    #:expected-test-runtime-error #:unexpected-test-runtime-lack-of-errors
    #:deftest #:deftest-expected-failure #:deftest-unstable-failure
    #:deftest-expected-compilation-failure #:deftest-expected-runtime-error
-   #:subtest-success
+   #:with-subtest #:subtest-success
    #:expect
    #:expect-value #:unexpected-value #:condition-expected #:condition-actual
    #:expect-success #:unexpected-failure #:condition-form
-   #:*suite-name* #:*test-name* #:*subtest-id* #:condition-subtest-id))
+   #:*suite-name* #:*test-name* #:condition-subtest-id))
 
 (in-package :custom-harness)
 
@@ -199,7 +199,7 @@
            (unless (find ',name (mapcar #'ensure-cons (test-suite-tests ,suite)) :key #'car)
              (push ',(if aggregate-params `(,name ,@aggregate-params) name) (test-suite-tests ,suite)))
            ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
-              `(let ((*suite-name* ',suite-name) (*test-name* ',name) (*subtest-id* 0))
+              `(let ((*suite-name* ',suite-name) (*test-name* ',name) *subtest-id*)
                  (declare (special *suite-name* *test-name* *subtest-id*))
                  ,@body)))))))
 
@@ -247,11 +247,15 @@
                  (test-error 'expected-test-runtime-error :error error)
                  (test-error 'unexpected-test-runtime-lack-of-errors :error-type ',error-type))))))
 
+(defmacro with-subtest (name &body body)
+  `(let ((*subtest-id* ,name))
+     (declare (special *subtest-id*))
+     ,@body))
+
 (defun subtest-success ()
   (declare (special *subtest-id*))
   (when *log-success*
     (report t "~@<subtest ~A passed~:@>~%" *subtest-id*))
-  (incf *subtest-id*)
   t)
 
 (defmacro expect (test-form (condition &rest condition-parameters) &body failure-body)
@@ -266,7 +270,7 @@
             (test-error ',condition ,@condition-parameters)))))
 
 (defun condition-subtest-id (cond)
-  (list (%condition-suite-name cond) (%condition-test-name cond) (%condition-subtest-id cond)))
+  (list* (%condition-suite-name cond) (%condition-test-name cond) (xform-if #'identity #'list (%condition-subtest-id cond))))
 
 (defun expect-value (expected actual &key (test #'eql))
   "Expect ACTUAL value to match with what was EXPECTED, under TEST, defaulting to EQL.

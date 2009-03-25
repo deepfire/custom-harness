@@ -30,7 +30,7 @@
    #:expected-test-runtime-error #:unexpected-test-runtime-lack-of-errors
    #:deftest #:deftest-expected-failure #:deftest-unstable-failure
    #:deftest-expected-compilation-failure #:deftest-expected-runtime-error
-   #:with-subtest #:subtest-success
+   #:with-subtest #:subtest-success #:condition-subtest-critical-p
    #:expect
    #:expect-value #:unexpected-value #:condition-expected #:condition-actual
    #:expect-success #:unexpected-failure #:condition-form
@@ -78,11 +78,17 @@
 (define-condition test-error (error)
   ((suite-name :accessor %condition-suite-name :initarg :suite-name)
    (test-name :accessor %condition-test-name :initarg :test-name)
-   (subtest-id :accessor %condition-subtest-id :initarg :subtest-id)))
+   (subtest-id :accessor %condition-subtest-id :initarg :subtest-id)
+   (critical-p :accessor condition-subtest-critical-p :initarg :critical-p)))
 
 (defun test-error (type &rest args)
-  (declare (special *suite-name* *test-name* *subtest-id*))
-  (apply #'error type :suite-name *suite-name* :test-name *test-name* :subtest-id *subtest-id* args))
+  (declare (special *suite-name* *test-name* *subtest-id* *subtest-not-critical*))
+  (let ((condition (apply #'make-condition type :suite-name *suite-name* :test-name *test-name* :subtest-id *subtest-id*
+                          :critical-p (not *subtest-not-critical*)
+                          args)))
+    (if *subtest-not-critical*
+        (format *error-output* "~A" condition)
+        (error condition))))
 
 (define-condition unexpected-test-failure (test-error) ())
 (define-condition expected-test-failure (test-error) ())
@@ -199,8 +205,8 @@
            (unless (find ',name (mapcar #'ensure-cons (test-suite-tests ,suite)) :key #'car)
              (push ',(if aggregate-params `(,name ,@aggregate-params) name) (test-suite-tests ,suite)))
            ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
-              `(let ((*suite-name* ',suite-name) (*test-name* ',name) *subtest-id*)
-                 (declare (special *suite-name* *test-name* *subtest-id*))
+              `(let ((*suite-name* ',suite-name) (*test-name* ',name) *subtest-id* *subtest-not-critical*)
+                 (declare (special *suite-name* *test-name* *subtest-id* *subtest-not-critical*))
                  ,@body)))))))
 
 (defmacro deftest (suite-name name required-features lambda-list &body body)
@@ -248,9 +254,11 @@
                  (test-error 'unexpected-test-runtime-lack-of-errors :error-type ',error-type))))))
 
 (defmacro with-subtest (name &body body)
-  `(let ((*subtest-id* ,name))
-     (declare (special *subtest-id*))
-     ,@body))
+  (destructuring-bind (name &key noncritical-p) (ensure-cons name)
+    `(let ((*subtest-id* ,name)
+           ,@(when noncritical-p `((*subtest-not-critical* t))))
+       (declare (special *subtest-id* ,@(when noncritical-p `(*subtest-not-critical*))))
+       ,@body)))
 
 (defun subtest-success ()
   (declare (special *subtest-id*))

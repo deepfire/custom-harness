@@ -122,7 +122,7 @@
              (let ((expected (condition-expected cond))
                    (actual (condition-actual cond))
                    (*print-base* 10))
-               (report stream "~@<unexpected value during test ~S:~3I ~<expected: ~X, actual: ~X~:@>~:@>"
+               (report stream "~@<unexpected value during test ~A:~3I ~<expected: ~X, actual: ~X~:@>~:@>"
                        (condition-subtest-id cond) (list expected actual))))))
 
 (defvar *test-suites* (make-hash-table))

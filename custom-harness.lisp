@@ -87,7 +87,7 @@
                           :critical-p (not *subtest-not-critical*)
                           args)))
     (if *subtest-not-critical*
-        (format *error-output* "~A" condition)
+        (format *error-output* "~A~%" condition)
         (error condition))))
 
 (define-condition unexpected-test-failure (test-error) ())
@@ -95,29 +95,29 @@
 (define-condition unexpected-test-success (test-error)
   ()
   (:report (lambda (cond stream)
-             (report stream "~@<unexpected success during test ~S~:@>"
+             (report stream "~@<    ~@;unexpected success during test ~S~:@>"
                      (%condition-test-name cond)))))
 (define-condition expected-test-compilation-failure (expected-test-failure)
   ()
   (:report (lambda (cond stream)
-             (report stream "~@<expected failure compiling test ~S~:@>"
+             (report stream "~@<    ~@;expected failure compiling test ~S~:@>"
                      (%condition-test-name cond)))))
 (define-condition unexpected-test-compilation-success (unexpected-test-success)
   ()
   (:report (lambda (cond stream)
-             (report stream "~@<unexpected success compiling test ~S~:@>"
+             (report stream "~@<    ~@;unexpected success compiling test ~S~:@>"
                      (%condition-test-name cond)))))
 (define-condition expected-test-runtime-error (expected-test-failure)
   ((error :accessor condition-error :initarg :error))
   (:report (lambda (cond stream)
-             (report stream "~@<expected runtime ~A ~A during test ~S~:@>"
+             (report stream "~@<    ~@;expected runtime ~A ~A during test ~S~:@>"
                      (type-of (condition-error cond))
                      (condition-error cond)
                      (%condition-test-name cond)))))
 (define-condition unexpected-test-runtime-lack-of-errors (unexpected-test-success)
   ((error-type :accessor condition-error-type :initarg :error-type))
   (:report (lambda (cond stream)
-             (report stream "~@<unexpected lack of runtime errors of type ~S during test ~S~:@>"
+             (report stream "~@<    ~@;unexpected lack of runtime errors of type ~S during test ~S~:@>"
                      (condition-error-type cond)
                      (%condition-test-name cond)))))
 
@@ -128,7 +128,7 @@
              (let ((expected (condition-expected cond))
                    (actual (condition-actual cond))
                    (*print-base* 10))
-               (report stream "~@<unexpected value during test ~A:~3I ~<expected: ~X, actual: ~X~:@>~:@>"
+               (report stream "~@<    ~@;unexpected value during test ~A:~3I ~<expected: ~X, actual: ~X~:@>~:@>"
                        (condition-subtest-id cond) (list expected actual))))))
 
 (defvar *test-suites* (make-hash-table))

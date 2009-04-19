@@ -28,5 +28,5 @@ What's missing in Stefil:
 
        -  fixture parametrization
        -  neat &fixture, ala &aux-ness
-       -  subtests, for increased test pathname informativity
-       -  criticality gradation, mixes well with subtests
+       -  lexical subtestability, for increased test pathname informativity
+       -  criticality gradation, mixes well with lexical subtestability

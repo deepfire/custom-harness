@@ -1,10 +1,32 @@
 http://aperiodic.net/phil/archives/Geekery/notes-on-lisp-testing-frameworks.html
 
-TEST-GROUPING: PACKAGES
-FIXTURES
-RESULT-COMPOSITION: HIERARCHICAL MULTIPLE-INHERITANCE
-FAILURE-PRESENTATION-SEPARATION
-SUCCESS/FAILURE-STATISTICS-SUMMARY
-SLOTS-IN-TEST-OBJECTS
-TEST-FAILURES-PPRINTABLE-OBJECTS
+EXPECTATIONS: T, NIL, MULTIPLE-VALUES, ERROR
+PRESENTATION: FAILED-FORM PPRINTABLE-OBJECTS STATISTICS SUCCESS-NOISE-SEPARATION RUNTIME-VISUAL-FEEDBACK
+(GROUPING STRUCTURE RESULT-COMPOSITION VERBOSITY-CONTROL): 
+          PACKAGE-POWERED/PACKAGE-VICTIM/AGNOSTIC, FIXTURES, DEPENDENCIES, MULTIPLE-INHERITANCE, HIERARCHY, COMPOSITION
+DEBUG-ORIENTED-TESTING: INTERACTIVE, RESTARTS
+FIXTURE-PARAMETRIZATION
+CRITICALITY-GRADATION
+TEST-PATHNAME
 RANDOMIZED-TESTING
+SLOTS-IN-TEST-OBJECTS
+
+(defixture quux (testable x y)
+  (:before
+    ...)
+  (:after
+    ...))
+
+(deftest barsuite foo (testable &fixture (quux 41 43) &depends-on woot)
+  (and (expect-true ...)
+       (expect-suite wootsuite (testable-sub testable))
+       (with-subtest subfoo (:noncritical-p t)
+         (expect-false ...))
+       (expect-condition error ,,,)))
+
+What's missing in Stefil:
+
+       -  fixture parametrization
+       -  neat &fixture, ala &aux-ness
+       -  subtests, for increased test pathname informativity
+       -  criticality gradation, mixes well with subtests

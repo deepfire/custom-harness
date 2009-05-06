@@ -140,14 +140,15 @@
   (find test (test-suite-tests suite) :key (compose #'car #'ensure-cons)))
 
 (defun format-test (stream test-name object)
-  (format stream "~@<  ~A: ~A~:@>~%" test-name object))
+  (syncformat stream "~@<  ~A: ~A~:@>~%" test-name object))
 
 (defun run-test (object test &optional (stream t))
   "Run TEST on OBJECT, reporting to STREAM, which defaults to T.
 
    TEST must be a test object, as returned by FIND-TEST."
-  (lret ((result (returning-conditions test-error (funcall test object))))
-    (format-test stream test result)))
+  (syncformat stream "  ~A: " test)
+  (lret ((test-result (returning-conditions test-error (funcall test object))))
+    (syncformat stream "~A~%" test-result)))
 
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/
@@ -174,8 +175,7 @@
       (terpri stream)
       (iter (for test-spec = (pprint-pop))
             (while test-spec)
-            (destructuring-bind (test-name &key expected-failure unstable-failure)
-                (ensure-cons test-spec)
+            (destructuring-bind (test-name &key expected-failure unstable-failure) (ensure-cons test-spec)
               (let ((result (run-test object test-name stream)))
                 (cond ((typep result 'test-error)
                        (if (or expected-failure unstable-failure

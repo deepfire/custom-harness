@@ -56,10 +56,6 @@
   ()
   (:report (suite) "~@<No tests defined for test suite ~S.~:@>" suite))
 
-(defun report (stream format-control &rest format-args)
-  (apply #'format stream format-control format-args)
-  (finish-output stream))
-
 (define-reported-condition undefined-test-suite-test (test-suite-error)
   ((test :reader condition-test :initarg :test))
   (:report (test) "~@<Test suite ~S has no test ~S defined.~:@>" suite test))
@@ -145,7 +141,7 @@
   (let ((*print-right-margin* 80)
         (tests (reverse (test-suite-tests suite)))
         conditions)
-    #+ecl (report stream "~&---( ") ;; BUG: stream flushing in the context of P-P-L-B is broken in ECL.
+    #+ecl (syncformat stream "~&---( ") ;; BUG: stream flushing in the context of P-P-L-B is broken in ECL.
     (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
       (terpri stream)
       (iter (for test-spec = (pprint-pop))
@@ -155,7 +151,7 @@
                 (cond ((typep result 'test-error)
                        (if (or expected-failure unstable-failure
                                (typep result 'expected-test-failure))
-                           (report stream "this failure is expected.~%")
+                           (syncformat stream "this failure is expected.~%")
                            (push result conditions)))
                       (expected-failure
                        (write

@@ -139,9 +139,6 @@
   "Find TEST within SUITE."
   (find test (test-suite-tests suite) :key (compose #'car #'ensure-cons)))
 
-(defun format-test (stream test-name object)
-  (syncformat stream "~@<  ~A: ~A~:@>~%" test-name object))
-
 (defun run-test (object test &optional (stream t))
   "Run TEST on OBJECT, reporting to STREAM, which defaults to T.
 

@@ -52,33 +52,29 @@
 (define-condition test-suite-error (error)
   ((suite :accessor condition-suite :initarg :suite)))
 
-(define-condition undefined-test-suite (test-suite-error)
+(define-reported-condition undefined-test-suite (test-suite-error)
   ()
-  (:report (lambda (cond stream)
-             (format stream "~@<no tests defined for test suite ~S~:@>" (condition-suite cond)))))
+  (:report (suite) "~@<No tests defined for test suite ~S.~:@>" suite))
 
 (defun report (stream format-control &rest format-args)
   (apply #'format stream format-control format-args)
   (finish-output stream))
 
-(define-condition undefined-test-suite-test (test-suite-error)
+(define-reported-condition undefined-test-suite-test (test-suite-error)
   ((test :reader condition-test :initarg :test))
-  (:report (lambda (cond stream)
-             (report stream "~@<test suite ~S has no test ~S defined~:@>"
-                     (condition-suite cond) (condition-test cond)))))
+  (:report (test) "~@<Test suite ~S has no test ~S defined.~:@>" suite test))
 
-(define-condition test-suite-failure (test-suite-error)
+(define-reported-condition test-suite-failure (test-suite-error)
   ((object :accessor condition-object :initarg :object)
    (conditions :accessor condition-conditions :type list :initarg :conditions))
-  (:report (lambda (cond stream)
-             (let (*print-length*)
-               (report stream "~@<while running tests from suite ~S on ~S, following test errors were reported:~2I~_~{~T~W~_~}~:@>"
-                       (condition-suite cond) (condition-object cond) (reverse (condition-conditions cond)))))))
+  (:report (suite object conditions)
+           "~@<While running tests from suite ~S on ~S, following test errors were reported:~2I~_~{~T~W~_~}~:@>"
+           suite object (reverse conditions)))
 
 (define-condition test-error (error)
-  ((suite-name :accessor %condition-suite-name :initarg :suite-name)
-   (test-name :accessor %condition-test-name :initarg :test-name)
-   (subtest-id :accessor %condition-subtest-id :initarg :subtest-id)
+  ((suite-name :initarg :suite-name)
+   (test-name :initarg :test-name)
+   (subtest-id :initarg :subtest-id)
    (critical-p :accessor condition-subtest-critical-p :initarg :critical-p)))
 
 (defun test-error (type &rest args)
@@ -92,44 +88,26 @@
 
 (define-condition unexpected-test-failure (test-error) ())
 (define-condition expected-test-failure (test-error) ())
-(define-condition unexpected-test-success (test-error)
+(define-reported-condition unexpected-test-success (test-error)
   ()
-  (:report (lambda (cond stream)
-             (report stream "~@<    ~@;unexpected success during test ~S~:@>"
-                     (%condition-test-name cond)))))
-(define-condition expected-test-compilation-failure (expected-test-failure)
+  (:report (test-name) "~@<    ~@;Unexpected success during test ~S~:@>" test-name))
+(define-reported-condition expected-test-compilation-failure (expected-test-failure)
   ()
-  (:report (lambda (cond stream)
-             (report stream "~@<    ~@;expected failure compiling test ~S~:@>"
-                     (%condition-test-name cond)))))
+  (:report (test-name) "~@<    ~@;Expected failure compiling test ~S~:@>" test-name))
 (define-condition unexpected-test-compilation-success (unexpected-test-success)
   ()
-  (:report (lambda (cond stream)
-             (report stream "~@<    ~@;unexpected success compiling test ~S~:@>"
-                     (%condition-test-name cond)))))
-(define-condition expected-test-runtime-error (expected-test-failure)
+  (:report (test-name) "~@<    ~@;Unexpected success compiling test ~S~:@>" test-name))
+(define-reported-condition expected-test-runtime-error (expected-test-failure)
   ((error :accessor condition-error :initarg :error))
-  (:report (lambda (cond stream)
-             (report stream "~@<    ~@;expected runtime ~A ~A during test ~S~:@>"
-                     (type-of (condition-error cond))
-                     (condition-error cond)
-                     (%condition-test-name cond)))))
+  (:report (error test-name) "~@<    ~@;Expected runtime ~A ~A during test ~S~:@>" (type-of error) error test-name))
 (define-condition unexpected-test-runtime-lack-of-errors (unexpected-test-success)
   ((error-type :accessor condition-error-type :initarg :error-type))
-  (:report (lambda (cond stream)
-             (report stream "~@<    ~@;unexpected lack of runtime errors of type ~S during test ~S~:@>"
-                     (condition-error-type cond)
-                     (%condition-test-name cond)))))
+  (:report (error-type test-name) "~@<    ~@;Unexpected lack of runtime errors of type ~S during test ~S~:@>" error-type test-name))
 
 (define-condition unexpected-value (unexpected-test-failure)
   ((expected :accessor condition-expected :initarg :expected)
    (actual :accessor condition-actual :initarg :actual))
-  (:report (lambda (cond stream)
-             (let ((expected (condition-expected cond))
-                   (actual (condition-actual cond))
-                   (*print-base* 10))
-               (report stream "~@<    ~@;unexpected value during test ~A:~3I ~<expected: ~X, actual: ~X~:@>~:@>"
-                       (condition-subtest-id cond) (list expected actual))))))
+  (:report (expected actual subtest-id) "~@<    ~@;Unexpected value during test ~A:~3I ~<expected: ~X, actual: ~X~:@>~:@>" subtest-id (list expected actual)))
 
 (defvar *test-suites* (make-hash-table))
 

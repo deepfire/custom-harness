@@ -58,7 +58,7 @@
 
 (define-reported-condition undefined-test-suite-test (test-suite-error)
   ((test :reader condition-test :initarg :test))
-  (:report (test) "~@<Test suite ~S has no test ~S defined.~:@>" suite test))
+  (:report (test suite) "~@<Test suite ~S has no test ~S defined.~:@>" suite test))
 
 (define-reported-condition test-suite-failure (test-suite-error)
   ((object :accessor condition-object :initarg :object)
@@ -68,9 +68,9 @@
            suite object (reverse conditions)))
 
 (define-condition test-error (error)
-  ((suite-name :initarg :suite-name)
-   (test-name :initarg :test-name)
-   (subtest-id :initarg :subtest-id)
+  ((suite-name :accessor condition-suite-name :initarg :suite-name)
+   (test-name :accessor condition-test-name :initarg :test-name)
+   (subtest-id :accessor %condition-subtest-id :initarg :subtest-id)
    (critical-p :accessor condition-subtest-critical-p :initarg :critical-p)))
 
 (defun test-error (type &rest args)
@@ -90,17 +90,17 @@
 (define-reported-condition expected-test-compilation-failure (expected-test-failure)
   ()
   (:report (test-name) "~@<    ~@;Expected failure compiling test ~S~:@>" test-name))
-(define-condition unexpected-test-compilation-success (unexpected-test-success)
+(define-reported-condition unexpected-test-compilation-success (unexpected-test-success)
   ()
   (:report (test-name) "~@<    ~@;Unexpected success compiling test ~S~:@>" test-name))
 (define-reported-condition expected-test-runtime-error (expected-test-failure)
   ((error :accessor condition-error :initarg :error))
   (:report (error test-name) "~@<    ~@;Expected runtime ~A ~A during test ~S~:@>" (type-of error) error test-name))
-(define-condition unexpected-test-runtime-lack-of-errors (unexpected-test-success)
+(define-reported-condition unexpected-test-runtime-lack-of-errors (unexpected-test-success)
   ((error-type :accessor condition-error-type :initarg :error-type))
   (:report (error-type test-name) "~@<    ~@;Unexpected lack of runtime errors of type ~S during test ~S~:@>" error-type test-name))
 
-(define-condition unexpected-value (unexpected-test-failure)
+(define-reported-condition unexpected-value (unexpected-test-failure)
   ((expected :accessor condition-expected :initarg :expected)
    (actual :accessor condition-actual :initarg :actual))
   (:report (expected actual subtest-id) "~@<    ~@;Unexpected value during test ~A:~3I ~<expected: ~X, actual: ~X~:@>~:@>" subtest-id (list expected actual)))
@@ -245,7 +245,7 @@
             (test-error ',condition ,@condition-parameters)))))
 
 (defun condition-subtest-id (cond)
-  (list* (%condition-suite-name cond) (%condition-test-name cond) (xform-if #'identity #'list (%condition-subtest-id cond))))
+  (list* (condition-suite-name cond) (condition-test-name cond) (xform-if #'identity #'list (%condition-subtest-id cond))))
 
 (defun expect-value (expected actual &key (test #'eql))
   "Expect ACTUAL value to match with what was EXPECTED, under TEST, defaulting to EQL.

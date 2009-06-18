@@ -117,9 +117,11 @@
   "Run TEST on OBJECT, reporting to STREAM, which defaults to T.
 
    TEST must be a test object, as returned by FIND-TEST."
-  (syncformat stream "  ~A: " test)
+  (syncformat stream "    ~A: " test)
+  (finish-output stream)
   (lret ((test-result (returning-conditions test-error (funcall test object))))
-    (syncformat stream "~A~%" test-result)))
+    (syncformat stream (if (eq t test-result) "~45,25T~A~%" "~%~7T~A~%")
+                test-result)))
 
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/

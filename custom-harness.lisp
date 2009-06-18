@@ -30,7 +30,7 @@
    #:expected-test-runtime-error #:unexpected-test-runtime-lack-of-errors
    #:deftest #:deftest-expected-failure #:deftest-unstable-failure
    #:deftest-expected-compilation-failure #:deftest-expected-runtime-error
-   #:with-subtest #:subtest-success #:condition-subtest-critical-p
+   #:with-subtest #:condition-subtest-critical-p
    #:expect
    #:expect-value #:unexpected-value #:condition-expected #:condition-actual
    #:expect-success #:unexpected-failure #:condition-form
@@ -231,19 +231,13 @@
        (declare (special *subtest-id* ,@(when noncritical-p `(*subtest-not-critical*))))
        ,@body)))
 
-(defun subtest-success ()
-  (declare (special *subtest-id*))
-  (when *log-success*
-    (report t "~@<subtest ~A passed~:@>~%" *subtest-id*))
-  t)
-
 (defmacro expect (test-form (condition &rest condition-parameters) &body failure-body)
   "Expect TEST-FORM evaluate to non-NIL, otherwise executing FAILURE-BODY, and raising
    CONDITION with CONDITION-PARAMETERS passed."
   (unless (subtypep condition 'test-error)
     (error "~@<condition must be a subtype of CUSTOM-HARNESS:TEST-ERROR~:@>"))
   `(locally
-     (cond (,test-form (subtest-success))
+     (cond (,test-form t)
            (t
             ,@failure-body
             (test-error ',condition ,@condition-parameters)))))
@@ -254,7 +248,8 @@
 (defun expect-value (expected actual &key (test #'eql))
   "Expect ACTUAL value to match with what was EXPECTED, under TEST, defaulting to EQL.
    UNEXPECTED-VALUE is raised otherwise."
-  (if (funcall test expected actual) (subtest-success)
+  (if (funcall test expected actual)
+      t
       (test-error 'unexpected-value :expected expected :actual actual)))
 
 (define-condition unexpected-failure (unexpected-test-failure)
@@ -266,6 +261,6 @@
 
 (defmacro expect-success (form)
   "Expect FORM evaluate to non-NIL, raising UNEXPECTED-FAILURE otherwise."
-  `(if ,form
-       (subtest-success)
+  `(or ,form
+       t
        (test-error 'unexpected-failure :form ',form)))

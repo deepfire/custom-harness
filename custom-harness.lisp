@@ -26,7 +26,8 @@
    #:test-featurep
    #:test-suite #:find-test #:run-test #:run-suite-test #:run-test-suite
    #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
-   #:test-error #:unexpected-test-failure #:unexpected-test-success #:unexpected-test-compilation-success
+   #:test-error #:signal-test-error #:simple-test-error
+   #:unexpected-test-failure #:unexpected-test-success #:unexpected-test-compilation-success
    #:expected-test-runtime-error #:unexpected-test-runtime-lack-of-errors
    #:deftest #:deftest-expected-failure #:deftest-unstable-failure
    #:deftest-expected-compilation-failure #:deftest-expected-runtime-error
@@ -73,7 +74,11 @@
    (subtest-id :accessor %condition-subtest-id :initarg :subtest-id)
    (critical-p :accessor condition-subtest-critical-p :initarg :critical-p)))
 
-(defun test-error (type &rest args)
+(define-condition simple-test-error (test-error simple-error)
+  ()
+  (:report report-simple-condition))
+
+(defun signal-test-error (type &rest args)
   (declare (special *suite-name* *test-name* *subtest-id* *subtest-not-critical*))
   (let ((condition (apply #'make-condition type :suite-name *suite-name* :test-name *test-name* :subtest-id *subtest-id*
                           :critical-p (not *subtest-not-critical*)
@@ -81,6 +86,9 @@
     (if *subtest-not-critical*
         (format *error-output* "~A~%" condition)
         (error condition))))
+
+(defun test-error (format-control &rest format-arguments)
+  (signal-test-error 'simple-test-error :format-control format-control :format-arguments format-arguments))
 
 (define-condition unexpected-test-failure (test-error) ())
 (define-condition expected-test-failure (test-error) ())
@@ -210,9 +218,9 @@
    in *TEST-CRITICAL-FEATURES* during runtime."
   `(do-deftest ,suite-name ,name ,required-features ,lambda-list
      ((declare (ignore ,@(lambda-list-binds lambda-list)))
-      (if (ignore-errors (compile nil (lambda ,lambda-list ,@body)))
-          (test-error 'unexpected-test-compilation-success)
-          (test-error 'expected-test-compilation-failure)))))
+      (signal-test-error (if (ignore-errors (compile nil (lambda ,lambda-list ,@body)))
+                             'unexpected-test-compilation-success
+                             'expected-test-compilation-failure)))))
 
 (defmacro deftest-expected-runtime-error (error-type suite-name name required-features lambda-list &body body)
   "Like DEFTEST, but catch unexpected runtime errors.
@@ -223,8 +231,8 @@
     `(do-deftest ,suite-name ,name ,required-features (,rest)
        ((if-let* ((error (nth-value 1 (ignore-errors (apply (lambda ,lambda-list ,@body) ,rest))))
                   (expected-error-p (typep error ',error-type)))
-                 (test-error 'expected-test-runtime-error :error error)
-                 (test-error 'unexpected-test-runtime-lack-of-errors :error-type ',error-type))))))
+                 (signal-test-error 'expected-test-runtime-error :error error)
+                 (signal-test-error 'unexpected-test-runtime-lack-of-errors :error-type ',error-type))))))
 
 (defmacro with-subtest (name &body body)
   (destructuring-bind (name &key noncritical-p) (ensure-cons name)
@@ -242,7 +250,7 @@
      (cond (,test-form t)
            (t
             ,@failure-body
-            (test-error ',condition ,@condition-parameters)))))
+            (signal-test-error ',condition ,@condition-parameters)))))
 
 (defun condition-subtest-id (cond)
   (list* (condition-suite-name cond) (condition-test-name cond) (xform-if #'identity #'list (%condition-subtest-id cond))))
@@ -252,7 +260,7 @@
    UNEXPECTED-VALUE is raised otherwise."
   (if (funcall test expected actual)
       t
-      (test-error 'unexpected-value :expected expected :actual actual)))
+      (signal-test-error 'unexpected-value :expected expected :actual actual)))
 
 (define-condition unexpected-failure (unexpected-test-failure)
   ((form :accessor condition-form :initarg :form))
@@ -265,4 +273,4 @@
   "Expect FORM evaluate to non-NIL, raising UNEXPECTED-FAILURE otherwise."
   `(or ,form
        t
-       (test-error 'unexpected-failure :form ',form)))
+       (signal-test-error 'unexpected-failure :form ',form)))

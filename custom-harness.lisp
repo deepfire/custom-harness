@@ -115,7 +115,7 @@
 
 (defvar *test-suites* (make-hash-table))
 
-(define-container-hash-accessor *test-suites* test-suite :coercer t)
+(define-root-container *test-suites* test-suite :coercer t)
 
 (defun find-test (suite test &aux (suite (coerce-to-test-suite suite)))
   "Find TEST within SUITE."

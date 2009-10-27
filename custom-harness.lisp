@@ -266,7 +266,7 @@
   ((form :accessor condition-form :initarg :form))
   (:report (lambda (cond stream)
              (let ((*print-base* 10))
-               (format stream "~@<unexpected NIL evaluation of form ~<~S~:@>~:@>"
+               (format stream "~@<form ~<~S~:@> unexpectedly evaluated to NIL~:@>"
                        (condition-form cond))))))
 
 (defmacro expect-success (form)

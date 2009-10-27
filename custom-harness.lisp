@@ -272,5 +272,4 @@
 (defmacro expect-success (form)
   "Expect FORM evaluate to non-NIL, raising UNEXPECTED-FAILURE otherwise."
   `(or ,form
-       t
        (signal-test-error 'unexpected-failure :form ',form)))

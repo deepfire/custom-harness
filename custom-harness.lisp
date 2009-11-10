@@ -127,9 +127,13 @@
    TEST must be a test object, as returned by FIND-TEST."
   (syncformat stream "    ~A: " test)
   (finish-output stream)
-  (lret ((test-result (returning-conditions test-error (funcall test object))))
-    (syncformat stream (if (eq t test-result) "~45,25T~A~%" "~%~7T~A~%")
-                test-result)))
+  (multiple-value-bind (condition test-result) (with-collected-conditions (test-error)
+                                                 (funcall test object))
+    (syncformat stream (if test-result
+                           "~45,25T~A~%"
+                           "~%~7T~A~%")
+                (or test-result condition))
+    test-result))
 
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/

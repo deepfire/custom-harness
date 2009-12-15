@@ -130,7 +130,7 @@
   (multiple-value-bind (condition backtrace test-result) (with-collected-conditions (test-error)
                                                            (funcall test object))
     (syncformat stream (if test-result
-                           "~45,25T~A~%"
+                           "~50,25T~A~%"
                            "~%~7T~A~%")
                 (or test-result condition))
     (or test-result condition)))

@@ -127,8 +127,8 @@
    TEST must be a test object, as returned by FIND-TEST."
   (syncformat stream "    ~A: " test)
   (finish-output stream)
-  (multiple-value-bind (condition test-result) (with-collected-conditions (test-error)
-                                                 (funcall test object))
+  (multiple-value-bind (condition backtrace test-result) (with-collected-conditions (test-error)
+                                                           (funcall test object))
     (syncformat stream (if test-result
                            "~45,25T~A~%"
                            "~%~7T~A~%")

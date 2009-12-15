@@ -133,7 +133,7 @@
                            "~45,25T~A~%"
                            "~%~7T~A~%")
                 (or test-result condition))
-    test-result))
+    (or test-result condition)))
 
 (defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/

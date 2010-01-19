@@ -22,20 +22,45 @@
   (:nicknames :cushar)
   (:use :common-lisp :alexandria :pergamum :iterate)
   (:export
-   #:*test-critical-features* #:*log-success*
+   #:*test-critical-features*
+   #:*log-success*
    #:test-featurep
-   #:test-suite #:find-test #:run-test #:run-suite-test #:run-test-suite
-   #:test-suite-error #:undefined-test-suite #:test-suite-failure #:test-suite-tests
-   #:test-error #:signal-test-error #:simple-test-error
-   #:unexpected-test-failure #:unexpected-test-success #:unexpected-test-compilation-success
-   #:expected-test-runtime-error #:unexpected-test-runtime-lack-of-errors
-   #:deftest #:deftest-expected-failure #:deftest-unstable-failure
-   #:deftest-expected-compilation-failure #:deftest-expected-runtime-error
-   #:with-subtest #:condition-subtest-critical-p
+   #:test-suite
+   #:find-test
+   #:run-test
+   #:run-suite-test
+   #:run-test-suite
+   #:test-suite-error
+   #:undefined-test-suite
+   #:test-suite-failure
+   #:test-suite-tests
+   #:test-error
+   #:signal-test-error
+   #:simple-test-error
+   #:unexpected-test-failure
+   #:unexpected-test-success
+   #:unexpected-test-compilation-success
+   #:expected-test-runtime-error
+   #:unexpected-test-runtime-lack-of-errors
+   #:deftest
+   #:deftest-expected-failure
+   #:deftest-unstable-failure
+   #:deftest-expected-compilation-failure
+   #:deftest-expected-runtime-error
+   #:with-subtest
+   #:condition-subtest-critical-p
+   #:current-subtest
    #:expect
-   #:expect-value #:unexpected-value #:condition-expected #:condition-actual
-   #:expect-success #:unexpected-failure #:condition-form
-   #:*suite-name* #:*test-name* #:condition-subtest-id))
+   #:expect-value
+   #:unexpected-value
+   #:condition-expected
+   #:condition-actual
+   #:expect-success
+   #:unexpected-failure
+   #:condition-form
+   #:*suite-name*
+   #:*test-name*
+   #:condition-subtest-id))
 
 (in-package :custom-harness)
 
@@ -86,6 +111,10 @@
     (if *subtest-not-critical*
         (format *error-output* "~A~%" condition)
         (error condition))))
+
+(defun current-subtest ()
+  (locally (declare (special *subtest-id*))
+    *subtest-id*))
 
 (defun test-error (format-control &rest format-arguments)
   (signal-test-error 'simple-test-error :format-control format-control :format-arguments format-arguments))

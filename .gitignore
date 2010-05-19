@@ -1,10 +1,15 @@
 \#*
 *~
+*.c
+*.h
+*.data
 *.o
 *.a
 *.fas
 *.fasb
 *.fasl
+*.lx32fsl
+*.lx64fsl
 *.wx32fsl
 
 # win32

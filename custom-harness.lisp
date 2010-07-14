@@ -183,6 +183,7 @@
    Failing all that, when all tests succeed, the value returned is T."
   (let ((*print-right-margin* 80)
         (tests (reverse (test-suite-tests suite)))
+        expected-failures
         conditions)
     #+ecl (syncformat stream "~&---( ") ;; BUG: stream flushing in the context of P-P-L-B is broken in ECL.
     (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
@@ -194,20 +195,21 @@
                 (cond ((typep result 'test-error)
                        (if (or expected-failure unstable-failure
                                (typep result 'expected-test-failure))
-                           (syncformat stream "this failure is expected.~%")
+                           (progn (syncformat stream "this failure is expected.~%")
+                                  (push result expected-failures))
                            (push result conditions)))
                       (expected-failure
-                       (write
-                        (first
-                         (push (make-instance 'unexpected-test-success
-                                :suite-name suite :test-name test-name) conditions))
-                        :stream stream :escape nil)
-                       (terpri stream)))))))
+                       ;; There was no error where one was expected, NO GOOD!
+                       (write (first (push (make-instance 'unexpected-test-success :suite-name suite :test-name test-name)
+                                           conditions))
+                              :stream stream :escape nil)
+                       (terpri stream)
+                       (finish-output stream)))))))
     (if conditions
         (ecase if-fail
-          (:continue nil)
+          (:continue (values nil expected-failures conditions))
           (:error (error 'test-suite-failure :suite (name suite) :object object :conditions conditions)))
-        t)))
+        (values t expected-failures))))
 
 (defmacro do-deftest (suite-name name required-features lambda-list body &rest params &key &allow-other-keys)
   (declare (symbol suite-name))

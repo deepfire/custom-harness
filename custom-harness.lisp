@@ -150,12 +150,11 @@
   "Find TEST within SUITE."
   (find test (test-suite-tests suite) :key (compose #'car #'ensure-cons)))
 
-(defun run-test (object test &optional (stream t))
+(defun run-test (object test &optional (stream *standard-output*))
   "Run TEST on OBJECT, reporting to STREAM, which defaults to T.
 
    TEST must be a test object, as returned by FIND-TEST."
   (syncformat stream "    ~A: " test)
-  (finish-output stream)
   (multiple-value-bind (condition backtrace test-result) (with-collected-conditions (test-error)
                                                            (funcall test object))
     (declare (ignore backtrace))
@@ -165,7 +164,7 @@
                 (or test-result condition))
     (or test-result condition)))
 
-(defun run-suite-test (object suite test &key (stream t) &aux (suite (coerce-to-test-suite suite)))
+(defun run-suite-test (object suite test &key (stream *standard-output*) &aux (suite (coerce-to-test-suite suite)))
   "Run an individual TEST from test SUITE, passing it the OBJECT/
    Output is redirected to STREAM, defaulting to *ERROR-OUTPUT*.
 

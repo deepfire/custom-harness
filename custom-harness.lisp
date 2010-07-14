@@ -185,8 +185,7 @@
         (tests (reverse (test-suite-tests suite)))
         expected-failures
         conditions)
-    #+ecl (syncformat stream "~&---( ") ;; BUG: stream flushing in the context of P-P-L-B is broken in ECL.
-    (pprint-logical-block (stream tests :prefix (format nil "running tests from suite ~S:" (name suite)))
+    (pprint-logical-block (stream tests :prefix (format nil "; Running tests from suite ~S:" (name suite)))
       (terpri stream)
       (iter (for test-spec = (pprint-pop))
             (while test-spec)
@@ -195,8 +194,9 @@
                 (cond ((typep result 'test-error)
                        (if (or expected-failure unstable-failure
                                (typep result 'expected-test-failure))
-                           (progn (syncformat stream "this failure is expected.~%")
-                                  (push result expected-failures))
+                           (push (prog1 result
+                                   (syncformat stream "; ...this failure is expected.~%"))
+                                 expected-failures)
                            (push result conditions)))
                       (expected-failure
                        ;; There was no error where one was expected, NO GOOD!

@@ -43,8 +43,6 @@
    #:expected-test-runtime-error
    #:unexpected-test-runtime-lack-of-errors
    #:deftest
-   #:deftest-expected-failure
-   #:deftest-unstable-failure
    #:deftest-expected-compilation-failure
    #:deftest-expected-runtime-error
    #:with-subtest
@@ -121,26 +119,27 @@
 
 (define-condition unexpected-test-failure (test-error) ())
 (define-condition expected-test-failure (test-error) ())
-(define-reported-condition unexpected-test-success (test-error)
-  ()
+
+(define-reported-condition unexpected-test-success (test-error) ()
   (:report (test-name) "~@<Unexpected success during test ~S~:@>" test-name))
-(define-reported-condition expected-test-compilation-failure (expected-test-failure)
-  ()
+(define-reported-condition expected-test-compilation-failure (expected-test-failure) ()
   (:report (test-name) "~@<Expected failure compiling test ~S~:@>" test-name))
-(define-reported-condition unexpected-test-compilation-success (unexpected-test-success)
-  ()
+(define-reported-condition unexpected-test-compilation-success (unexpected-test-success)  ()
   (:report (test-name) "~@<Unexpected success compiling test ~S~:@>" test-name))
+
 (define-reported-condition expected-test-runtime-error (expected-test-failure)
   ((error :accessor condition-error :initarg :error))
   (:report (error test-name) "~@<Expected runtime ~A ~A during test ~S~:@>" (type-of error) error test-name))
 (define-reported-condition unexpected-test-runtime-lack-of-errors (unexpected-test-success)
   ((error-type :accessor condition-error-type :initarg :error-type))
   (:report (error-type test-name) "~@<Unexpected lack of runtime errors of type ~S during test ~S~:@>" error-type test-name))
-
 (define-reported-condition unexpected-value (unexpected-test-failure)
   ((expected :accessor condition-expected :initarg :expected)
    (actual :accessor condition-actual :initarg :actual))
   (:report (expected actual subtest-id) "~@<Unexpected value during test ~A:~3I ~<expected: ~X, actual: ~X~:@>~:@>" subtest-id (list expected actual)))
+(define-reported-condition unexpected-failure (unexpected-test-failure)
+  ((form :accessor condition-form :initarg :form))
+  (:report (subtest-id form) "~@<During test ~A: form ~<~S~:@> unexpectedly evaluated to NIL~:@>" subtest-id form))
 
 (defvar *test-suites* (make-hash-table))
 
@@ -189,86 +188,76 @@
       (terpri stream)
       (iter (for test-spec = (pprint-pop))
             (while test-spec)
-            (destructuring-bind (test-name &key expected-failure unstable-failure) (ensure-cons test-spec)
-              (let ((result (run-test object test-name stream)))
-                (cond ((typep result 'test-error)
-                       (if (or expected-failure unstable-failure
-                               (typep result 'expected-test-failure))
-                           (push (prog1 result
-                                   (syncformat stream "; ...this failure is expected.~%"))
-                                 expected-failures)
-                           (push result conditions)))
-                      (expected-failure
-                       ;; There was no error where one was expected, NO GOOD!
-                       (write (first (push (make-instance 'unexpected-test-success :suite-name suite :test-name test-name)
-                                           conditions))
-                              :stream stream :escape nil)
-                       (terpri stream)
-                       (finish-output stream)))))))
+            (destructuring-bind (test-name &key expected-failure unstable-failure of-type) (ensure-cons test-spec)
+              (if (and of-type (not (typep object of-type)))
+                  (syncformat stream "; object is not of type ~S, skipping ~S~%" of-type test-name)
+                  (let ((result (run-test object test-name stream)))
+                    (cond ((typep result 'test-error)
+                           (if (or expected-failure unstable-failure
+                                   (typep result 'expected-test-failure))
+                               (push (prog1 result
+                                       (syncformat stream "; ...this failure is expected.~%"))
+                                     expected-failures)
+                               (push result conditions)))
+                          (expected-failure
+                           ;; There was no error where one was expected, NO GOOD!
+                           (write (first (push (make-instance 'unexpected-test-success :suite-name suite :test-name test-name)
+                                               conditions))
+                                  :stream stream :escape nil)
+                           (terpri stream)
+                           (finish-output stream))))))))
     (if conditions
         (ecase if-fail
           (:continue (values nil expected-failures conditions))
           (:error (error 'test-suite-failure :suite (name suite) :object object :conditions conditions)))
         (values t expected-failures))))
 
-(defmacro do-deftest (suite-name name required-features lambda-list body &rest params &key &allow-other-keys)
+(defun almost-ensure-suite-and-test (suite-name test-name test-attributes)
+  "Do all the bureaucratic paperwork required to register a test within a test suite,
+along with its attributes, short of the meat of actually (DEFUN <TEST-NAME> ...)."
+  (let ((suite (or (test-suite suite-name :if-does-not-exist :continue)
+                   (setf (test-suite suite-name) (make-instance 'test-suite :name suite-name)))))
+    (unless (find-test suite test-name)
+      (push (list* test-name test-attributes) (test-suite-tests suite)))))
+
+(defmacro deftest (suite-name name lambda-list attributes &body body)
+  "Like DEFUN, but the defined function is associated with test suite SUITE-NAME,
+and qualified with a set of ATTRIBUTES.
+
+Valid attributes are:
+   :EXPECTED-FAILURE - do not raise an error upon test failure, but rather on its success,
+   :UNSTABLE-FAILURE - do not raise an error in no case,
+   :OF-TYPE          - only run this test, if the passed object is SUBTYPEP to the value
+                         of this attribute."
   (declare (symbol suite-name))
   (multiple-value-bind (documentation declarations body) (destructure-def-body body)
-    (let ((aggregate-params (append params (when required-features `(:required-features ,required-features)))))
-      (with-gensyms (suite)
-        `(let ((,suite (or (test-suite ',suite-name :if-does-not-exist :continue)
-                           (setf (test-suite ',suite-name) (make-instance 'test-suite :name ',suite-name)))))
-           (unless (find ',name (mapcar #'ensure-cons (test-suite-tests ,suite)) :key #'car)
-             (push ',(if aggregate-params `(,name ,@aggregate-params) name) (test-suite-tests ,suite)))
-           ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
-              `(let ((*suite-name* ',suite-name) (*test-name* ',name) *subtest-id* *subtest-not-critical*)
-                 (declare (special *suite-name* *test-name* *subtest-id* *subtest-not-critical*))
-                 ,@body)))))))
+    `(progn
+       (almost-ensure-suite-and-test ',suite-name ',name ',attributes)
+       ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
+          `(let ((*suite-name* ',suite-name) (*test-name* ',name) *subtest-id* *subtest-not-critical*)
+             (declare (special *suite-name* *test-name* *subtest-id* *subtest-not-critical*))
+             ,@body)))))
 
-(defmacro deftest (suite-name name required-features lambda-list &body body)
-  "Like DEFUN, but the defined function is associated with test suite SUITE-NAME.
+(defmacro deftest-expected-compilation-failure (suite-name name lambda-list attributes &body body)
+  "Expect compilation of BODY with binding LAMBDA-LIST to fail."
+  `(deftest ,suite-name ,name ,attributes ,lambda-list
+     (declare (ignore ,@(lambda-list-binds lambda-list)))
+     (signal-test-error (if (ignore-errors (compile nil (lambda ,lambda-list ,@body)))
+                            'unexpected-test-compilation-success
+                            'expected-test-compilation-failure))))
 
-   The test is only made available if all of REQUIRED-FEATURES are also present
-   in *TEST-CRITICAL-FEATURES* during runtime."
-  `(do-deftest ,suite-name ,name ,required-features ,lambda-list (,@body)))
-
-(defmacro deftest-expected-failure (suite-name name required-features lambda-list &body body)
-  "Like DEFTEST, but the success expectations are reversed.
-
-   The test is only made available if all of REQUIRED-FEATURES are also present
-   in *TEST-CRITICAL-FEATURES* during runtime."
-  `(do-deftest ,suite-name ,name ,required-features ,lambda-list (,@body) :expected-failure t))
-
-(defmacro deftest-unstable-failure (suite-name name required-features lambda-list &body body)
-  "Like DEFTEST, both success and failure are ignored.
-
-   The test is only made available if all of REQUIRED-FEATURES are also present
-   in *TEST-CRITICAL-FEATURES* during runtime."
-  `(do-deftest ,suite-name ,name ,required-features ,lambda-list (,@body) :unstable-failure t))
-
-(defmacro deftest-expected-compilation-failure (suite-name name required-features lambda-list &body body)
-  "Expect compilation of BODY with binding LAMBDA-LIST to fail.
-
-   The test is only made available if all of REQUIRED-FEATURES are also present
-   in *TEST-CRITICAL-FEATURES* during runtime."
-  `(do-deftest ,suite-name ,name ,required-features ,lambda-list
-     ((declare (ignore ,@(lambda-list-binds lambda-list)))
-      (signal-test-error (if (ignore-errors (compile nil (lambda ,lambda-list ,@body)))
-                             'unexpected-test-compilation-success
-                             'expected-test-compilation-failure)))))
-
-(defmacro deftest-expected-runtime-error (error-type suite-name name required-features lambda-list &body body)
-  "Like DEFTEST, but catch unexpected runtime errors.
-
-   The test is only made available if all of REQUIRED-FEATURES are also present
-   in *TEST-CRITICAL-FEATURES* during runtime."
+(defmacro deftest-expected-runtime-error (error-type suite-name name lambda-list attributes &body body)
+  "Like DEFTEST, but catch unexpected runtime errors."
   (with-gensyms (rest)
-    `(do-deftest ,suite-name ,name ,required-features (,rest)
-       ((if-let* ((error (nth-value 1 (ignore-errors (apply (lambda ,lambda-list ,@body) ,rest))))
-                  (expected-error-p (typep error ',error-type)))
-                 (signal-test-error 'expected-test-runtime-error :error error)
-                 (signal-test-error 'unexpected-test-runtime-lack-of-errors :error-type ',error-type))))))
+    `(deftest ,suite-name ,name ,attributes (,rest)
+       (if-let* ((error (nth-value 1 (ignore-errors (apply (lambda ,lambda-list ,@body) ,rest))))
+                 (expected-error-p (typep error ',error-type)))
+                (signal-test-error 'expected-test-runtime-error :error error)
+                (signal-test-error 'unexpected-test-runtime-lack-of-errors :error-type ',error-type)))))
 
+;;;;
+;;;; In-test tools
+;;;;
 (defmacro with-subtest (name &body body)
   (destructuring-bind (name &key noncritical-p) (ensure-cons name)
     `(let ((*subtest-id* ,name)
@@ -296,13 +285,6 @@
   (if (funcall test expected actual)
       t
       (signal-test-error 'unexpected-value :expected expected :actual actual)))
-
-(define-condition unexpected-failure (unexpected-test-failure)
-  ((form :accessor condition-form :initarg :form))
-  (:report (lambda (cond stream)
-             (let ((*print-base* 10))
-               (format stream "~@<form ~<~S~:@> unexpectedly evaluated to NIL~:@>"
-                       (condition-form cond))))))
 
 (defmacro expect-success (form)
   "Expect FORM evaluate to non-NIL, raising UNEXPECTED-FAILURE otherwise."

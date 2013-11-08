@@ -230,7 +230,7 @@ Valid attributes are:
    :OF-TYPE          - only run this test, if the passed object is SUBTYPEP to the value
                          of this attribute."
   (declare (symbol suite-name))
-  (multiple-value-bind (documentation declarations body) (destructure-def-body body)
+  (multiple-value-bind (body declarations documentation) (parse-body body :documentation t)
     `(progn
        (almost-ensure-suite-and-test ',suite-name ',name ',attributes)
        ,(with-defun-emission (name lambda-list :documentation documentation :declarations declarations)
